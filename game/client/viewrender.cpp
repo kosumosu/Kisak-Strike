@@ -9690,7 +9690,8 @@ void CConcurrentViewBuilder::QueueBuildWorldListJob( CJob* pJob )
 			CConcurrentViewData* pViewData = &m_viewData[m_buildViewID];
 			if ( !pViewData->m_pBuildWorldListJob )
 			{
-				pViewData->m_pBuildWorldListJob = new SequentialJobs( pJob );
+                const auto pSequentialJob = new SequentialJobs(pJob);
+                pViewData->m_pBuildWorldListJob = pSequentialJob;
 			}
 			else
 			{
@@ -9848,13 +9849,22 @@ void CConcurrentViewBuilder::AddToSequentialJobs( CJob* pJob )
 {
 	if ( !m_pPendingSeqJobs )
 	{
-		m_pPendingSeqJobs = new SequentialJobs();
+        const auto pSequentialJob = new SequentialJobs();
+        pSequentialJob->SetFlags(JF_SERIAL);
+        m_pPendingSeqJobs = pSequentialJob;
 	}
 	m_pPendingSeqJobs->AddJob( pJob );
 }
 
 void CConcurrentViewBuilder::TryRunSequentialJobs( void )
 {
+    if (m_pPendingSeqJobs) {
+        AddJobToThreadPool(m_pPendingSeqJobs);
+        m_pPendingSeqJobs = nullptr;
+    }
+
+    return;
+/*
 	if ( m_pCurrentSeqJobs && m_pCurrentSeqJobs->IsFinished() )
 	{
 		SafeRelease( m_pCurrentSeqJobs );
@@ -9867,6 +9877,7 @@ void CConcurrentViewBuilder::TryRunSequentialJobs( void )
 		AddJobToThreadPool( m_pCurrentSeqJobs );
 		m_pPendingSeqJobs = NULL;
 	}
+*/
 }
 
 void CConcurrentViewBuilder::WaitForCurrentSequentialJobAndRunPending()
@@ -9875,6 +9886,8 @@ void CConcurrentViewBuilder::WaitForCurrentSequentialJobAndRunPending()
 	{
 		m_pCurrentSeqJobs->AccessEvent()->Wait();
 	}
+
+    // Disgusting! Access to m_pPendingSeqJobs from a non-main thread needs synchronization!
 
 	// Run pending jobs
 	// m_pCurrentSeqJobs & m_pPendingSeqJobs will get released in Purge()
